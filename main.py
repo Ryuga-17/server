@@ -17,7 +17,7 @@ latest_earthquake_data = []
 latest_cyclone_data = []
 
 def fetch_earthquake_data():
-    """Fetch latest earthquake data from USGS."""
+    """Fetch latest earthquake data from USGS with comprehensive details."""
     global latest_earthquake_data
 
     params = {
@@ -25,33 +25,80 @@ def fetch_earthquake_data():
         "starttime": datetime.now(UTC).strftime('%Y-%m-%d'),
         "endtime": datetime.now(UTC).strftime('%Y-%m-%d'),
         "minmagnitude": 3.0,
-        "orderby": "time",
-        "limit": 50
+        "orderby": "time-asc",  # Get oldest first
+        "limit": 50,
+        "eventtype": "earthquake"
     }
 
-    response = requests.get(USGS_URL, params=params)
+    try:
+        response = requests.get(USGS_URL, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            extracted_data = []
 
-    if response.status_code == 200:
-        data = response.json()
-        extracted_data = []
+            for feature in data["features"]:
+                properties = feature["properties"]
+                geometry = feature["geometry"]["coordinates"]
+                
+                # Extract detailed location information
+                place = properties.get("place", "N/A")
+                if ", " in place:
+                    region = place.split(", ")[-1]  # Get the region/country
+                else:
+                    region = place
+                
+                # Comprehensive earthquake information
+                earthquake_info = {
+                    # Basic info
+                    "id": feature.get("id"),
+                    "time": properties.get("time"),
+                    "updated": properties.get("updated"),
+                    
+                    # Magnitude details
+                    "magnitude": properties.get("mag"),
+                    "mag_type": properties.get("magType"),
+                    "magnitude_error": properties.get("magError", "N/A"),
+                    
+                    # Location details
+                    "latitude": geometry[1],
+                    "longitude": geometry[0],
+                    "depth_km": geometry[2],
+                    "depth_error": properties.get("depthError", "N/A"),
+                    "location": place,
+                    "region": region,
+                    
+                    # Seismic parameters
+                    "seismic_stations": properties.get("nst", "N/A"),
+                    "rms": properties.get("rms", "N/A"),  # Root mean square of travel time residuals
+                    "gap": properties.get("gap", "N/A"),    # Azimuthal gap between stations
+                    "dmin": properties.get("dmin", "N/A"),  # Horizontal distance to nearest station
+                    
+                    # Fault mechanism
+                    "focal_mechanism": {
+                        "strike": properties.get("strike", "N/A"),
+                        "dip": properties.get("dip", "N/A"),
+                        "rake": properties.get("rake", "N/A")
+                    },
+                    
+                    # Tsunami risk
+                    "tsunami_alert": 1 if properties.get("tsunami") else 0,
+                    "tsunami_warning": properties.get("alert", "N/A"),  # "green", "yellow", "red"
+                    
+                    # Additional metadata
+                    "event_type": properties.get("type"),
+                    "status": properties.get("status"),  # "automatic" or "reviewed"
+                    "url": properties.get("url")  # USGS detail page
+                }
 
-        for feature in data["features"]:
-            properties = feature["properties"]
-            geometry = feature["geometry"]["coordinates"]
+                extracted_data.append(earthquake_info)
 
-            earthquake_info = {
-                "magnitude": properties.get("mag", "N/A"),
-                "depth": geometry[2],
-                "latitude": geometry[1],
-                "longitude": geometry[0]
-            }
-
-            extracted_data.append(earthquake_info)
-
-        latest_earthquake_data = extracted_data
-        print(f"[{datetime.now(UTC)}] ✅ Updated earthquake data ({len(extracted_data)} records)")
-    else:
-        print(f"❌ Failed to fetch earthquake data: HTTP {response.status_code}")
+            latest_earthquake_data = extracted_data
+            print(f"[{datetime.now(UTC)}] ✅ Updated earthquake data ({len(extracted_data)} records)")
+        else:
+            print(f"❌ Failed to fetch earthquake data: HTTP {response.status_code}")
+    except Exception as e:
+        print(f"❌ Error fetching earthquake data: {str(e)}")
 
 def fetch_cyclone_data():
     """Fetch live cyclone data from NOAA."""
